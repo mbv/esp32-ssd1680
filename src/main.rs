@@ -5,14 +5,14 @@ use esp_idf_hal::peripherals::Peripherals;
 use esp_idf_sys as _; // If using the `binstart` feature of `esp-idf-sys`, always keep this module imported
 use log::*;
 use ssd1680::prelude::*;
-use ssd1680::color::{Black, White, Red};
-
+use ssd1680::color::{Black, Red};
 use embedded_graphics::{
-    fonts::{Font6x8, Text},
     prelude::*,
     primitives::{Circle, Line, Rectangle},
-    style::PrimitiveStyle,
-    text_style,
+    mono_font::{ascii::FONT_5X8, MonoTextStyle},
+    pixelcolor::{BinaryColor},
+    primitives::PrimitiveStyle,
+    text::{Alignment, Text, TextStyleBuilder}
 };
 
 fn main() {
@@ -42,16 +42,16 @@ fn main() {
         &SpiDriverConfig::default()
     ).unwrap();
 
-    let cs = PinDriver::output(peripherals.pins.gpio9).unwrap();
+    let cs = peripherals.pins.gpio9;
 
-    let mut spi = SpiDeviceDriver::new(spi, Option::<AnyIOPin>::None, &Config::new()).unwrap();
+    let mut spi = SpiDeviceDriver::new(spi, Some(cs), &Config::new()).unwrap();
 
     // Initialise display controller
-    let mut ssd1680 = Ssd1680::new(&mut spi, cs, busy, dc, rst, &mut delay).unwrap();
+    let mut ssd1680 = Ssd1680::new(&mut spi, busy, dc, rst, &mut delay).unwrap();
 
     // Clear frames on the display driver
-    ssd1680.clear_red_frame(&mut spi).unwrap();
-    ssd1680.clear_bw_frame(&mut spi).unwrap();
+    ssd1680.clear_red_frame().unwrap();
+    ssd1680.clear_bw_frame().unwrap();
 
     // Create buffer for black and white
     let mut display_bw = Display2in13::bw();
@@ -59,27 +59,27 @@ fn main() {
     draw_rotation_and_rulers(&mut display_bw);
 
     display_bw.set_rotation(DisplayRotation::Rotate0);
-    Rectangle::new(Point::new(60, 60), Point::new(100, 100))
+    Rectangle::new(Point::new(60, 60), Size::new(40, 40))
         .into_styled(PrimitiveStyle::with_fill(Black))
         .draw(&mut display_bw)
         .unwrap();
 
     info!("Send bw frame to display");
-    ssd1680.update_bw_frame(&mut spi, display_bw.buffer()).unwrap();
+    ssd1680.update_bw_frame(display_bw.buffer()).unwrap();
 
     // Draw red color
     let mut display_red = Display2in13::red();
 
-    Circle::new(Point::new(100, 100), 20)
+    Circle::new(Point::new(80, 80), 40)
         .into_styled(PrimitiveStyle::with_fill(Red))
         .draw(&mut display_red)
         .unwrap();
 
     // println!("Send red frame to display");
-    ssd1680.update_red_frame(&mut spi, display_red.buffer()).unwrap();
+    ssd1680.update_red_frame(display_red.buffer()).unwrap();
 
     info!("Update display");
-    ssd1680.display_frame(&mut spi, &mut FreeRtos).unwrap();
+    ssd1680.display_frame(&mut FreeRtos).unwrap();
 
     info!("Done");
     loop {
@@ -89,19 +89,19 @@ fn main() {
 
 fn draw_rotation_and_rulers(display: &mut Display2in13) {
     display.set_rotation(DisplayRotation::Rotate0);
-    draw_text(display, "rotation 0", 25, 25);
+    draw_text(display, "rotation 0", 50, 35);
     draw_ruler(display);
 
     display.set_rotation(DisplayRotation::Rotate90);
-    draw_text(display, "rotation 90", 25, 25);
+    draw_text(display, "rotation 90", 50, 35);
     draw_ruler(display);
 
     display.set_rotation(DisplayRotation::Rotate180);
-    draw_text(display, "rotation 180", 25, 25);
+    draw_text(display, "rotation 180", 50, 35);
     draw_ruler(display);
 
     display.set_rotation(DisplayRotation::Rotate270);
-    draw_text(display, "rotation 270", 25, 25);
+    draw_text(display, "rotation 270", 50, 35);
     draw_ruler(display);
 }
 
@@ -116,18 +116,20 @@ fn draw_ruler(display: &mut Display2in13) {
 
         if col % 50 == 0 {
             let label = col.to_string();
-            draw_text(display, &label, col as i32, 12);
+            draw_text(display, &label, col as i32, 20);
         }
     }
 }
 
 fn draw_text(display: &mut Display2in13, text: &str, x: i32, y: i32) {
-    let _ = Text::new(text, Point::new(x, y))
-        .into_styled(text_style!(
-            font = Font6x8,
-            text_color = Black,
-            background_color = White
-        ))
+    let style = MonoTextStyle::new(&FONT_5X8, BinaryColor::Off);
+    let _ = Text::with_text_style(text,
+                                  Point::new(x, y),
+                                  style,
+                                  TextStyleBuilder::new()
+                                      .alignment(Alignment::Center)
+                                      .build(),
+    )
         .draw(display);
 }
 
